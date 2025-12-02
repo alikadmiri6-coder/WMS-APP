@@ -763,7 +763,7 @@ with st.sidebar:
     with st.expander("📁 Source de Données", expanded=False):
         folder = st.text_input(
             "Répertoire de Données",
-            value="/Users/alikadmiri/Desktop/ENSAM/PROJET METIER/Dataset/B2B_Outbound"
+            value="compressed_dataset"
         )
 
         if st.button("🔄 Actualiser les Données", type="primary", use_container_width=True):

@@ -181,7 +181,7 @@ VALID_BRANDS = ['ER', 'OC', 'ME']
 @st.cache_data(show_spinner=False, ttl=3600)
 def load_data(folder: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """
-    Robust data loading with comprehensive error handling
+    Load data from Parquet files (optimized format)
     Returns: (DataFrame, Error Message)
     """
     try:
@@ -189,9 +189,10 @@ def load_data(folder: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         if not path.exists():
             return None, f"⚠️ Directory not found: {folder}"
 
-        files = sorted(path.glob("*.csv"))
+        # Load Parquet files
+        files = sorted(path.glob("*.parquet"))
         if not files:
-            return None, "⚠️ No CSV files found in directory."
+            return None, "⚠️ No Parquet files found in directory."
 
         all_dfs = []
         failed_files = []
@@ -200,47 +201,34 @@ def load_data(folder: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         status_text = st.empty()
 
         for i, file in enumerate(files):
-            status_text.text(f"Loading {file.name}... ({i+1}/{len(files)})")
-            loaded = False
+            status_text.text(f"Chargement {file.name}... ({i+1}/{len(files)})")
+            
+            try:
+                # Load Parquet file (fast and efficient)
+                df = pd.read_parquet(file)
+                
+                # Clean column names
+                df.columns = df.columns.str.strip()
 
-            for enc in ENCODINGS:
-                try:
-                    df = pd.read_csv(
-                        file,
-                        sep=';',
-                        encoding=enc,
-                        dtype=str,
-                        on_bad_lines='skip',
-                        low_memory=False
-                    )
+                # Unify column names
+                col_map = {
+                    'v_Code Pays Facturation': 'Pays',
+                    'Pays de Livraison': 'Pays',
+                    'Pays Facturation': 'Pays',
+                    'Code Pays': 'Pays'
+                }
+                df.rename(columns=col_map, inplace=True)
 
-                    # Clean column names
-                    df.columns = df.columns.str.strip()
+                # Add missing columns with defaults
+                if 'PCB' not in df.columns:
+                    df['PCB'] = np.nan
+                if 'SPCB' not in df.columns:
+                    df['SPCB'] = np.nan
 
-                    # Unify column names
-                    col_map = {
-                        'v_Code Pays Facturation': 'Pays',
-                        'Pays de Livraison': 'Pays',
-                        'Pays Facturation': 'Pays',
-                        'Code Pays': 'Pays'
-                    }
-                    df.rename(columns=col_map, inplace=True)
+                df['_Source'] = file.name
+                all_dfs.append(df)
 
-                    # Add missing columns with defaults
-                    if 'PCB' not in df.columns:
-                        df['PCB'] = np.nan
-                    if 'SPCB' not in df.columns:
-                        df['SPCB'] = np.nan
-
-                    df['_Source'] = file.name
-                    all_dfs.append(df)
-                    loaded = True
-                    break
-
-                except Exception as e:
-                    continue
-
-            if not loaded:
+            except Exception as e:
                 failed_files.append(file.name)
 
             progress_bar.progress((i + 1) / len(files))
@@ -256,6 +244,8 @@ def load_data(folder: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
             st.warning(f"⚠️ Could not load {len(failed_files)} file(s): {', '.join(failed_files[:3])}")
 
         combined_df = pd.concat(all_dfs, ignore_index=True, sort=False)
+        st.success(f"✅ {len(files)} fichier(s) Parquet chargé(s) - Format optimisé")
+        
         return combined_df, None
 
     except Exception as e:

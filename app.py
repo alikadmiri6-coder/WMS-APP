@@ -717,7 +717,7 @@ if not st.session_state['authenticated']:
                 submit = st.form_submit_button(
                     "🔐 Accéder au Portail",
                     type="primary",
-                    use_container_width=True
+                    width='stretch'
                 )
 
             if submit:
@@ -766,7 +766,7 @@ with st.sidebar:
             value="compressed_dataset"
         )
 
-        if st.button("🔄 Actualiser les Données", type="primary", use_container_width=True):
+        if st.button("🔄 Actualiser les Données", type="primary", width='stretch'):
             with st.spinner("Chargement des données..."):
                 st.cache_data.clear()
                 raw, error = load_data(folder)
@@ -793,7 +793,7 @@ with st.sidebar:
 
     st.markdown("<br>", unsafe_allow_html=True)
 
-    if st.button("🚪 Déconnexion", use_container_width=True):
+    if st.button("🚪 Déconnexion", width='stretch'):
         st.session_state['authenticated'] = False
         st.session_state['data_loaded'] = False
         st.rerun()
@@ -967,7 +967,7 @@ if page == "🏠 Tableau de Bord Exécutif":
                     bgcolor="#10b981",
                     font=dict(color="white")
                 )
-            st.plotly_chart(fig_daily, use_container_width=True)
+            st.plotly_chart(fig_daily, width='stretch')
             st.info(f"📊 **Analyse** : Volume quotidien moyen de **{daily_trend[metric].mean():,.0f} unités**. Pic à **{daily_trend[metric].max():,.0f} unités**.")
         else:
             st.warning("Aucune donnée disponible pour le graphique de tendance")
@@ -988,7 +988,7 @@ if page == "🏠 Tableau de Bord Exécutif":
             )
             fig_brand.update_traces(textposition='inside', textinfo='percent+label')
             fig_brand.update_layout(height=350)
-            st.plotly_chart(fig_brand, use_container_width=True)
+            st.plotly_chart(fig_brand, width='stretch')
             
             # Ajouter une analyse
             top_brand = brand_vol.loc[brand_vol[metric].idxmax()]
@@ -1022,7 +1022,7 @@ if page == "🏠 Tableau de Bord Exécutif":
         xaxis_title="📅 Jour de la Semaine",
         yaxis_title="📦 Volume (Unités)"
     )
-    st.plotly_chart(fig_week, use_container_width=True)
+    st.plotly_chart(fig_week, width='stretch')
     
     # Analyse du jour le plus chargé
     if len(weekly) > 0:
@@ -1053,7 +1053,7 @@ if page == "🏠 Tableau de Bord Exécutif":
         xaxis_title="📦 Article",
         yaxis_title="📊 Volume (Unités)"
     )
-    st.plotly_chart(fig_top, use_container_width=True)
+    st.plotly_chart(fig_top, width='stretch')
     
     if len(top_products) > 0:
         top_3_vol = top_products.head(3)[metric].sum()
@@ -1139,7 +1139,7 @@ elif page == "⚙️ Excellence Opérationnelle":
                 height=300,
                 showlegend=True
             )
-            st.plotly_chart(fig_mono, use_container_width=True)
+            st.plotly_chart(fig_mono, width='stretch')
             st.info(f"📊 **Analyse** : **{kpis.get('pct_mono', 0):.1f}%** des commandes sont mono-ligne (picking simple et rapide).")
 
         with col_chart2:
@@ -1161,7 +1161,7 @@ elif page == "⚙️ Excellence Opérationnelle":
                     xaxis_title="📋 Lignes par Commande",
                     yaxis_title="📊 Fréquence"
                 )
-                st.plotly_chart(fig_dist, use_container_width=True)
+                st.plotly_chart(fig_dist, width='stretch')
 
         st.markdown("### 🔄 Modes de Picking")
         st.caption("💡 **Comment lire** : Ce graphique montre la répartition du volume par mode de préparation. Identifiez le mode dominant pour optimiser vos processus.")
@@ -1207,7 +1207,7 @@ elif page == "⚙️ Excellence Opérationnelle":
             yaxis_title="📦 Volume (Unités)",
             showlegend=False
         )
-        st.plotly_chart(fig_mode, use_container_width=True)
+        st.plotly_chart(fig_mode, width='stretch')
         
         # Analyse du mode dominant
         if len(mode_stats) > 0:
@@ -1240,7 +1240,7 @@ elif page == "⚙️ Excellence Opérationnelle":
             aspect='auto'
         )
         fig_heat.update_layout(height=400)
-        st.plotly_chart(fig_heat, use_container_width=True)
+        st.plotly_chart(fig_heat, width='stretch')
 
         st.markdown("---")
 
@@ -1266,7 +1266,7 @@ elif page == "⚙️ Excellence Opérationnelle":
             xaxis_title="📅 Mois",
             yaxis_title="📦 Volume (Unités)"
         )
-        st.plotly_chart(fig_monthly, use_container_width=True)
+        st.plotly_chart(fig_monthly, width='stretch')
         
         if len(monthly) > 1:
             trend = "croissance" if monthly[metric].iloc[-1] > monthly[metric].iloc[0] else "décroissance"
@@ -1315,13 +1315,13 @@ elif page == "⚙️ Excellence Opérationnelle":
                     projection='natural earth'
                 )
                 fig_map.update_layout(height=500, margin={"r":0,"t":30,"l":0,"b":0})
-                st.plotly_chart(fig_map, use_container_width=True)
+                st.plotly_chart(fig_map, width='stretch')
 
             with col_table:
                 st.markdown("**Top 15 Pays**")
                 st.dataframe(
                     geo_df.head(15).set_index('Pays'),
-                    use_container_width=True,
+                    width='stretch',
                     height=400
                 )
             
@@ -1365,7 +1365,7 @@ elif page == "⚙️ Excellence Opérationnelle":
                 }
             ))
             fig_gauge.update_layout(height=300)
-            st.plotly_chart(fig_gauge, use_container_width=True)
+            st.plotly_chart(fig_gauge, width='stretch')
             
             if rate < 98:
                 st.warning(f"⚠️ Attention : Taux de service à **{rate:.1f}%** (Cible : 98%)")
@@ -1390,7 +1390,7 @@ elif page == "⚙️ Excellence Opérationnelle":
                     xaxis_title="📦 Article",
                     yaxis_title="📉 Quantité Manquante"
                 )
-                st.plotly_chart(fig_cuts, use_container_width=True)
+                st.plotly_chart(fig_cuts, width='stretch')
             else:
                 st.success("✅ Aucune rupture de stock détectée")
 
@@ -1473,7 +1473,7 @@ elif page == "📊 Analyse ABC":
             legend=dict(title="Légende")
         )
 
-        st.plotly_chart(fig_pareto, use_container_width=True)
+        st.plotly_chart(fig_pareto, width='stretch')
 
     with col_chart2:
         # Class distribution pie
@@ -1486,7 +1486,7 @@ elif page == "📊 Analyse ABC":
             color_discrete_map={'A': '#10b981', 'B': '#f59e0b', 'C': '#ef4444'}
         )
         fig_pie.update_layout(height=400)
-        st.plotly_chart(fig_pie, use_container_width=True)
+        st.plotly_chart(fig_pie, width='stretch')
 
     st.markdown("---")
 
@@ -1536,7 +1536,7 @@ elif page == "📊 Analyse ABC":
 
     st.dataframe(
         filtered_abc[['Article', metric, 'Pct', 'Cumul', 'Classe']].head(100),
-        use_container_width=True,
+        width='stretch',
         height=400
     )
 
@@ -1604,7 +1604,7 @@ elif page == "🔗 Associations Produits":
             aspect='auto'
         )
         fig_heat.update_layout(height=600)
-        st.plotly_chart(fig_heat, use_container_width=True)
+        st.plotly_chart(fig_heat, width='stretch')
 
     # Recommender Tab
     with tab_recommender:
@@ -1652,13 +1652,13 @@ elif page == "🔗 Associations Produits":
                 yaxis_title="🔄 Fréquence de Co-occurrence",
                 template='plotly_white'
             )
-            st.plotly_chart(fig_rec, use_container_width=True)
+            st.plotly_chart(fig_rec, width='stretch')
 
             with col_data:
                 st.markdown("**Métriques d'Association**")
                 st.dataframe(
                     related[['Related_Product', 'Fréquence', 'Support']],
-                    use_container_width=True,
+                    width='stretch',
                     height=400
                 )
 
@@ -1678,7 +1678,7 @@ elif page == "🔗 Associations Produits":
 
         st.dataframe(
             assoc_df.sort_values('Fréquence', ascending=False),
-            use_container_width=True,
+            width='stretch',
             height=600
         )
 
@@ -1751,7 +1751,7 @@ elif page == "🧠 Insights IA":
                 legend=dict(title="Légende")
             )
 
-            st.plotly_chart(fig_forecast, use_container_width=True)
+            st.plotly_chart(fig_forecast, width='stretch')
 
             # Forecast summary
             if not forecast.empty:
@@ -1795,13 +1795,13 @@ elif page == "🧠 Insights IA":
                     xaxis_title="📋 Nombre de Lignes",
                     yaxis_title="📦 Volume (Unités)"
                 )
-                st.plotly_chart(fig_anom, use_container_width=True)
+                st.plotly_chart(fig_anom, width='stretch')
 
             with col_table:
                 st.markdown("**Top Anomalies**")
                 st.dataframe(
                     anomalies[['No Op', 'Volume', 'Lignes', 'Score']].head(20),
-                    use_container_width=True,
+                    width='stretch',
                     height=400
                 )
 
@@ -1867,7 +1867,7 @@ elif page == "🧠 Insights IA":
                 xaxis_title="🔄 Fréquence (Échelle Log)",
                 yaxis_title="📦 Volume (Échelle Log)"
             )
-            st.plotly_chart(fig_cluster, use_container_width=True)
+            st.plotly_chart(fig_cluster, width='stretch')
 
             st.markdown("### 💡 Recommandations de Stockage")
 
@@ -1971,7 +1971,7 @@ elif page == "📅 Export de Données":
                 file_name=f"wms_analytics_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 type="primary",
-                use_container_width=True
+                width='stretch'
             )
 
         # CSV export
@@ -1984,7 +1984,7 @@ elif page == "📅 Export de Données":
             data=csv_data,
             file_name=f"wms_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
             mime="text/csv",
-            use_container_width=True
+            width='stretch'
         )
 
     with col_exp2:
@@ -2005,7 +2005,7 @@ elif page == "📅 Export de Données":
             data=summary_report.encode('utf-8'),
             file_name=f"executive_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
             mime="text/plain",
-            use_container_width=True
+            width='stretch'
         )
 
     st.markdown("---")

@@ -1218,11 +1218,10 @@ elif page == "⚙️ Excellence Opérationnelle":
     st.markdown("# ⚙️ Excellence Opérationnelle")
     st.markdown("Analyse approfondie des métriques opérationnelles et indicateurs d'efficacité")
 
-    tab_profile, tab_time, tab_geo, tab_quality = st.tabs([
+    tab_profile, tab_time, tab_geo = st.tabs([
         "📦 Profil Commandes",
         "⏱️ Analyse Temporelle",
-        "🌍 Géographie",
-        "✅ Qualité"
+        "🌍 Géographie"
     ])
 
     # Order Profile Tab
@@ -1479,69 +1478,6 @@ elif page == "⚙️ Excellence Opérationnelle":
             st.info(f"📊 **Analyse** : **{top_country['Pays']}** est le marché principal avec **{pct_top:.1f}%** du volume total.")
         else:
             st.warning("⚠️ Aucune donnée géographique disponible")
-
-    # Quality Tab
-    with tab_quality:
-        st.markdown("### ✅ Métriques de Qualité de Service")
-        st.caption("💡 **Vue d'ensemble** : Surveillez la performance de service et identifiez les ruptures de stock critiques.")
-
-        rate, cuts = compute_quality_metrics(df_f)
-
-        col_gauge, col_cuts = st.columns([1, 2])
-
-        with col_gauge:
-            st.markdown("#### 🎯 Taux de Service")
-            st.caption("💡 **Objectif** : > 98%")
-            
-            fig_gauge = go.Figure(go.Indicator(
-                mode="gauge+number+delta",
-                value=rate,
-                title={'text': "Taux de Service (OTIF)"},
-                domain={'x': [0, 1], 'y': [0, 1]},
-                gauge={
-                    'axis': {'range': [None, 100]},
-                    'bar': {'color': "#10b981" if rate > 98 else "#ef4444"},
-                    'steps': [
-                        {'range': [0, 95], 'color': "#fee2e2"},
-                        {'range': [95, 98], 'color': "#fef3c7"},
-                        {'range': [98, 100], 'color': "#d1fae5"}
-                    ],
-                    'threshold': {
-                        'line': {'color': "red", 'width': 4},
-                        'thickness': 0.75,
-                        'value': 98
-                    }
-                }
-            ))
-            fig_gauge.update_layout(height=300)
-            st.plotly_chart(fig_gauge, width='stretch')
-            
-            if rate < 98:
-                st.warning(f"⚠️ Attention : Taux de service à **{rate:.1f}%** (Cible : 98%)")
-            else:
-                st.success(f"✅ Excellent : Taux de service à **{rate:.1f}%**")
-
-        with col_cuts:
-            if not cuts.empty:
-                st.markdown("#### 📉 Analyse des Ruptures")
-                st.caption("💡 **Comment lire** : Liste des produits avec les plus grandes quantités manquantes. Priorité absolue pour le réapprovisionnement.")
-                
-                fig_cuts = px.bar(
-                    cuts.head(10),
-                    x='Article',
-                    y='Manquant',
-                    title="Top 10 Articles en Rupture",
-                    color_discrete_sequence=['#ef4444'],
-                    labels={'Article': 'Article', 'Manquant': 'Quantité Manquante'}
-                )
-                fig_cuts.update_layout(
-                    height=300,
-                    xaxis_title="📦 Article",
-                    yaxis_title="📉 Quantité Manquante"
-                )
-                st.plotly_chart(fig_cuts, width='stretch')
-            else:
-                st.success("✅ Aucune rupture de stock détectée")
 
 # =============================================================================
 # PAGE 3: ABC ANALYSIS
@@ -1839,78 +1775,10 @@ elif page == "🧠 Insights IA":
     st.markdown("# 🧠 Insights IA & Prédictions")
     st.markdown("Analyses avancées utilisant le Machine Learning")
 
-    tab_forecast, tab_anomalies, tab_clustering = st.tabs([
-        "📈 Prévision Demande",
+    tab_anomalies, tab_clustering = st.tabs([
         "🚨 Détection Anomalies",
         "🎯 Clustering Produits"
     ])
-
-    # Forecasting Tab
-    with tab_forecast:
-        st.markdown("### 📈 Prévision de Demande")
-        st.caption("💡 **Vue d'ensemble** : Prédiction du volume sur 14 jours basée sur une moyenne mobile.")
-
-        col_param1, col_param2 = st.columns(2)
-
-        with col_param1:
-            ma_window = st.slider("Fenêtre Moyenne Mobile (jours)", 3, 30, 7)
-
-        with col_param2:
-            forecast_horizon = st.slider("Horizon de Prévision (jours)", 7, 30, 14)
-
-        with st.spinner("Génération des prévisions..."):
-            daily, forecast = compute_forecast(df_f, metric, ma_window, forecast_horizon)
-
-        if not daily.empty:
-            fig_forecast = go.Figure()
-
-            # Historical data
-            fig_forecast.add_trace(go.Scatter(
-                x=daily.index,
-                y=daily[metric],
-                name='Réel',
-                line=dict(color='lightgray', width=1),
-                mode='lines'
-            ))
-
-            # Moving average
-            fig_forecast.add_trace(go.Scatter(
-                x=daily.index,
-                y=daily['MA_7'],
-                name=f'Moyenne Mobile {ma_window}j',
-                line=dict(color='#2563eb', width=3)
-            ))
-
-            # Forecast
-            if not forecast.empty:
-                fig_forecast.add_trace(go.Scatter(
-                    x=forecast.index,
-                    y=forecast['Forecast'],
-                    name='Prévision',
-                    line=dict(color='#10b981', width=3, dash='dash')
-                ))
-
-            fig_forecast.update_layout(
-                title="Prévision de Volume",
-                template='plotly_white',
-                height=400,
-                hovermode='x unified',
-                xaxis_title="📅 Date",
-                yaxis_title="📦 Volume (Unités)",
-                legend=dict(title="Légende")
-            )
-
-            st.plotly_chart(fig_forecast, width='stretch')
-
-            # Forecast summary
-            if not forecast.empty:
-                avg_forecast = forecast['Forecast'].mean()
-                st.info(
-                    f"📊 **Résumé Prévision** : Volume quotidien moyen attendu de "
-                    f"**{avg_forecast:,.0f} unités** sur les {forecast_horizon} prochains jours"
-                )
-        else:
-            st.warning("⚠️ Données insuffisantes pour la prévision")
 
     # Anomaly Tab
     with tab_anomalies:

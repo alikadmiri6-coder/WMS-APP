@@ -178,12 +178,19 @@ VALID_BRANDS = ['ER', 'OC', 'ME']
 # CORE BUSINESS LOGIC - OPTIMIZED
 # =============================================================================
 
-@st.cache_data(show_spinner=False, ttl=3600)
+@st.cache_data(show_spinner=False, ttl=3600, max_entries=2)
 def load_data(folder: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
     """
-    Load data from Parquet files (optimized format)
+    Load data from Parquet files with robust error handling and memory management
     Returns: (DataFrame, Error Message)
     """
+    # Configuration limits to prevent crashes
+    MAX_FILE_SIZE_MB = 500  # Max 500 MB per file
+    MAX_TOTAL_ROWS = 10_000_000  # Max 10 million rows total
+    MAX_FILES = 50  # Max 50 files
+    SAMPLE_LARGE_FILES = True  # Enable sampling for large files
+    SAMPLE_SIZE = 1_000_000  # Sample size for large files
+
     try:
         path = Path(folder)
         if not path.exists():
@@ -194,19 +201,49 @@ def load_data(folder: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         if not files:
             return None, "⚠️ No Parquet files found in directory."
 
+        # Limit number of files
+        if len(files) > MAX_FILES:
+            st.warning(f"⚠️ Found {len(files)} files. Loading only the first {MAX_FILES} files.")
+            files = files[:MAX_FILES]
+
         all_dfs = []
         failed_files = []
+        skipped_files = []
+        total_rows = 0
 
         progress_bar = st.progress(0)
         status_text = st.empty()
 
         for i, file in enumerate(files):
             status_text.text(f"Chargement {file.name}... ({i+1}/{len(files)})")
-            
+
             try:
-                # Load Parquet file (fast and efficient)
+                # Check file size before loading
+                file_size_mb = file.stat().st_size / (1024 * 1024)
+                if file_size_mb > MAX_FILE_SIZE_MB:
+                    skipped_files.append(f"{file.name} ({file_size_mb:.1f}MB)")
+                    continue
+
+                # Load Parquet file
                 df = pd.read_parquet(file)
-                
+
+                # Check if we're approaching row limit
+                if total_rows + len(df) > MAX_TOTAL_ROWS:
+                    remaining_rows = MAX_TOTAL_ROWS - total_rows
+                    if remaining_rows > 0 and SAMPLE_LARGE_FILES:
+                        # Take only remaining rows
+                        df = df.sample(n=min(remaining_rows, len(df)), random_state=42)
+                        st.warning(f"⚠️ Sampling {file.name} to respect row limit")
+                    else:
+                        st.warning(f"⚠️ Row limit reached. Stopping at {i+1}/{len(files)} files.")
+                        break
+
+                # Sample large dataframes
+                if len(df) > SAMPLE_SIZE and SAMPLE_LARGE_FILES:
+                    original_size = len(df)
+                    df = df.sample(n=SAMPLE_SIZE, random_state=42)
+                    st.info(f"ℹ️ Sampling {file.name}: {original_size:,} → {SAMPLE_SIZE:,} rows")
+
                 # Clean column names
                 df.columns = df.columns.str.strip()
 
@@ -219,17 +256,26 @@ def load_data(folder: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
                 }
                 df.rename(columns=col_map, inplace=True)
 
-                # Add missing columns with defaults
+                # Add missing columns with defaults (memory efficient)
                 if 'PCB' not in df.columns:
                     df['PCB'] = np.nan
                 if 'SPCB' not in df.columns:
                     df['SPCB'] = np.nan
 
                 df['_Source'] = file.name
-                all_dfs.append(df)
 
+                # Optimize memory usage
+                df = optimize_dataframe_memory(df)
+
+                all_dfs.append(df)
+                total_rows += len(df)
+
+            except MemoryError:
+                st.error(f"❌ Memory error loading {file.name}. Try with fewer files or enable sampling.")
+                break
             except Exception as e:
-                failed_files.append(file.name)
+                failed_files.append(f"{file.name} ({str(e)[:50]})")
+                continue
 
             progress_bar.progress((i + 1) / len(files))
 
@@ -237,108 +283,211 @@ def load_data(folder: str) -> Tuple[Optional[pd.DataFrame], Optional[str]]:
         status_text.empty()
 
         if not all_dfs:
-            return None, "⚠️ Could not read any files. Check file format."
+            return None, "⚠️ Could not read any files. Check file format or size limits."
 
-        # Display warnings for failed files
+        # Display warnings
         if failed_files:
             st.warning(f"⚠️ Could not load {len(failed_files)} file(s): {', '.join(failed_files[:3])}")
+        if skipped_files:
+            st.warning(f"⚠️ Skipped {len(skipped_files)} large file(s): {', '.join(skipped_files[:3])}")
 
-        combined_df = pd.concat(all_dfs, ignore_index=True, sort=False)
-        st.success(f"✅ {len(files)} fichier(s) Parquet chargé(s) - Format optimisé")
-        
-        return combined_df, None
+        # Concatenate with memory-efficient method
+        try:
+            combined_df = pd.concat(all_dfs, ignore_index=True, sort=False, copy=False)
+
+            # Clear individual dataframes from memory
+            del all_dfs
+
+            st.success(f"✅ {len(files)} fichier(s) Parquet chargé(s) - {total_rows:,} lignes au total")
+
+            return combined_df, None
+
+        except MemoryError:
+            return None, "⚠️ Memory error during data concatenation. Reduce data size or enable sampling."
 
     except Exception as e:
         return None, f"⚠️ Critical error: {str(e)}"
 
+
+def optimize_dataframe_memory(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Optimize DataFrame memory usage by downcasting numeric types
+    """
+    try:
+        for col in df.columns:
+            col_type = df[col].dtype
+
+            # Optimize integer columns
+            if col_type == 'int64':
+                df[col] = pd.to_numeric(df[col], downcast='integer')
+
+            # Optimize float columns
+            elif col_type == 'float64':
+                df[col] = pd.to_numeric(df[col], downcast='float')
+
+            # Convert object columns with few unique values to category
+            elif col_type == 'object':
+                num_unique = df[col].nunique()
+                num_total = len(df[col])
+                if num_unique / num_total < 0.5:  # Less than 50% unique values
+                    df[col] = df[col].astype('category')
+
+        return df
+    except Exception:
+        # If optimization fails, return original df
+        return df
+
 def clean_data(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Comprehensive data cleaning and validation
+    Comprehensive data cleaning and validation with memory optimization
     """
-    original_count = len(df)
+    try:
+        original_count = len(df)
 
-    # Clean Article codes
-    df['Article'] = df['Article'].astype(str).str.upper().str.strip()
-    df = df[df['Article'].notna() & (df['Article'] != '') & (df['Article'] != 'NAN')]
-    df = df[~df['Article'].str.contains('TOTAL|SOMME|ARTICLE|UNDEFINED', case=False, na=False, regex=True)]
+        # Verify minimum required columns exist
+        required_cols = ['Article', 'Nbre Unités']
+        missing_cols = [col for col in required_cols if col not in df.columns]
+        if missing_cols:
+            st.error(f"❌ Missing required columns: {', '.join(missing_cols)}")
+            return pd.DataFrame()
 
-    # Convert numeric columns
-    numeric_cols = ['Nbre Unités', 'Quantité préparée', 'Nbre Colis', 'PCB', 'SPCB']
-    for col in numeric_cols:
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col].astype(str).str.replace(',', '.'), errors='coerce').fillna(0)
+        # Clean Article codes (memory efficient)
+        with st.spinner("Nettoyage des codes articles..."):
+            df['Article'] = df['Article'].astype(str).str.upper().str.strip()
+            mask = (
+                df['Article'].notna() &
+                (df['Article'] != '') &
+                (df['Article'] != 'NAN') &
+                (~df['Article'].str.contains('TOTAL|SOMME|ARTICLE|UNDEFINED', case=False, na=False, regex=True))
+            )
+            df = df[mask]
 
-    # Handle dates intelligently
-    df = process_dates(df)
+        # Convert numeric columns efficiently
+        with st.spinner("Conversion des colonnes numériques..."):
+            numeric_cols = ['Nbre Unités', 'Quantité préparée', 'Nbre Colis', 'PCB', 'SPCB']
+            for col in numeric_cols:
+                if col in df.columns:
+                    # More efficient conversion
+                    df[col] = pd.to_numeric(
+                        df[col].astype(str).str.replace(',', '.'),
+                        errors='coerce'
+                    ).fillna(0).astype('float32')  # Use float32 instead of float64
 
-    # Clean and validate brands
-    if 'Marque' in df.columns:
-        df['Marque'] = df['Marque'].astype(str).str.upper().str.strip()
-        df = df[df['Marque'].isin(VALID_BRANDS)]
-    else:
-        st.warning("⚠️ 'Marque' column not found. Creating default brand.")
-        df['Marque'] = 'ER'
+        # Handle dates intelligently
+        with st.spinner("Traitement des dates..."):
+            df = process_dates(df)
 
-    # Clean operation numbers
-    if 'No Op' in df.columns:
-        df['No Op'] = df['No Op'].astype(str).str.strip()
-        df = df[df['No Op'] != '']
+        # Clean and validate brands
+        with st.spinner("Validation des marques..."):
+            if 'Marque' in df.columns:
+                df['Marque'] = df['Marque'].astype(str).str.upper().str.strip()
+                df = df[df['Marque'].isin(VALID_BRANDS)]
+            else:
+                st.warning("⚠️ 'Marque' column not found. Creating default brand.")
+                df['Marque'] = 'ER'
 
-    # Remove duplicates
-    df = df.drop_duplicates()
+        # Clean operation numbers
+        if 'No Op' in df.columns:
+            df['No Op'] = df['No Op'].astype(str).str.strip()
+            df = df[df['No Op'] != '']
 
-    # Filter out invalid data
-    df = df[df['Nbre Unités'] >= 0]
+        # Remove duplicates efficiently
+        with st.spinner("Suppression des doublons..."):
+            df = df.drop_duplicates(keep='first')
 
-    cleaned_count = len(df)
+        # Filter out invalid data
+        df = df[df['Nbre Unités'] >= 0]
 
-    if cleaned_count < original_count * 0.5:
-        st.warning(f"⚠️ Data cleaning removed {original_count - cleaned_count:,} rows ({(1-cleaned_count/original_count)*100:.1f}%)")
+        # Reset index to optimize memory
+        df.reset_index(drop=True, inplace=True)
 
-    return df
+        cleaned_count = len(df)
+
+        if cleaned_count == 0:
+            st.error("❌ No valid data remaining after cleaning!")
+            return pd.DataFrame()
+
+        if cleaned_count < original_count * 0.5:
+            st.warning(f"⚠️ Data cleaning removed {original_count - cleaned_count:,} rows ({(1-cleaned_count/original_count)*100:.1f}%)")
+        else:
+            st.info(f"✅ Data cleaned: {cleaned_count:,} rows kept from {original_count:,}")
+
+        return df
+
+    except MemoryError:
+        st.error("❌ Memory error during data cleaning. Try loading less data.")
+        return pd.DataFrame()
+    except Exception as e:
+        st.error(f"❌ Error during data cleaning: {str(e)}")
+        return pd.DataFrame()
 
 def process_dates(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Intelligent date processing with fallbacks
+    Intelligent date processing with fallbacks and error handling
     """
-    if 'Date Expedition Colis' in df.columns:
-        # Try to parse existing dates
-        df['Date'] = pd.to_datetime(
-            df['Date Expedition Colis'],
-            dayfirst=True,
-            errors='coerce'
-        )
-
-        # Fallback for failed dates
-        mask_na = df['Date'].isna()
-        if mask_na.any():
-            # Extract from filename
-            df.loc[mask_na, 'Mois_Str'] = df.loc[mask_na, '_Source'].apply(
-                lambda x: re.search(r'(\d{4}-\d{2})', str(x)).group(1)
-                if re.search(r'(\d{4}-\d{2})', str(x)) else None
-            )
-            df.loc[mask_na, 'Date'] = pd.to_datetime(
-                df.loc[mask_na, 'Mois_Str'] + '-01',
+    try:
+        if 'Date Expedition Colis' in df.columns:
+            # Try to parse existing dates
+            df['Date'] = pd.to_datetime(
+                df['Date Expedition Colis'],
+                dayfirst=True,
                 errors='coerce'
             )
-    else:
-        # Full fallback: extract from filename
-        df['Mois_Str'] = df['_Source'].apply(
-            lambda x: re.search(r'(\d{4}-\d{2})', str(x)).group(1)
-            if re.search(r'(\d{4}-\d{2})', str(x)) else '2025-01'
-        )
-        df['Date'] = pd.to_datetime(df['Mois_Str'] + '-01', errors='coerce')
 
-    # Final fallback for any remaining NaT
-    df['Date'] = df['Date'].fillna(pd.Timestamp.now())
+            # Fallback for failed dates
+            mask_na = df['Date'].isna()
+            if mask_na.any():
+                # Extract from filename (safer approach)
+                def extract_date_from_filename(filename):
+                    try:
+                        match = re.search(r'(\d{4}-\d{2})', str(filename))
+                        return match.group(1) if match else None
+                    except Exception:
+                        return None
 
-    df['Mois'] = df['Date'].dt.strftime('%Y-%m')
-    df['Year'] = df['Date'].dt.year
-    df['Month'] = df['Date'].dt.month
-    df['DayOfWeek'] = df['Date'].dt.day_name()
-    df['Week'] = df['Date'].dt.isocalendar().week
+                df.loc[mask_na, 'Mois_Str'] = df.loc[mask_na, '_Source'].apply(extract_date_from_filename)
 
-    return df
+                # Only process rows where we found a date pattern
+                valid_month_mask = mask_na & df['Mois_Str'].notna()
+                if valid_month_mask.any():
+                    df.loc[valid_month_mask, 'Date'] = pd.to_datetime(
+                        df.loc[valid_month_mask, 'Mois_Str'] + '-01',
+                        errors='coerce'
+                    )
+        else:
+            # Full fallback: extract from filename
+            def safe_extract_date(filename):
+                try:
+                    match = re.search(r'(\d{4}-\d{2})', str(filename))
+                    return match.group(1) if match else '2025-01'
+                except Exception:
+                    return '2025-01'
+
+            df['Mois_Str'] = df['_Source'].apply(safe_extract_date)
+            df['Date'] = pd.to_datetime(df['Mois_Str'] + '-01', errors='coerce')
+
+        # Final fallback for any remaining NaT
+        df['Date'] = df['Date'].fillna(pd.Timestamp.now())
+
+        # Create derived date columns efficiently
+        df['Mois'] = df['Date'].dt.strftime('%Y-%m')
+        df['Year'] = df['Date'].dt.year.astype('int16')  # Use int16 for year
+        df['Month'] = df['Date'].dt.month.astype('int8')  # Use int8 for month
+        df['DayOfWeek'] = df['Date'].dt.day_name().astype('category')  # Category for day names
+        df['Week'] = df['Date'].dt.isocalendar().week.astype('int8')  # Use int8 for week
+
+        return df
+
+    except Exception as e:
+        st.warning(f"⚠️ Error processing dates: {str(e)}. Using default dates.")
+        # If all else fails, use current date
+        df['Date'] = pd.Timestamp.now()
+        df['Mois'] = df['Date'].dt.strftime('%Y-%m')
+        df['Year'] = df['Date'].dt.year.astype('int16')
+        df['Month'] = df['Date'].dt.month.astype('int8')
+        df['DayOfWeek'] = df['Date'].dt.day_name().astype('category')
+        df['Week'] = df['Date'].dt.isocalendar().week.astype('int8')
+        return df
 
 @st.cache_data(show_spinner=False)
 def compute_abc(df: pd.DataFrame, metric: str) -> pd.DataFrame:
